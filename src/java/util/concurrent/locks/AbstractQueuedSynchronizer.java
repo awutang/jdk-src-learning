@@ -679,6 +679,7 @@ public abstract class AbstractQueuedSynchronizer
          * unparkSuccessor, we need to know if CAS to reset status
          * fails, if so rechecking.
          */
+        // TODO:唤醒所有的shared节点吗？
         for (;;) {
             Node h = head;
             if (h != null && h != tail) {
@@ -709,6 +710,7 @@ public abstract class AbstractQueuedSynchronizer
         Node h = head; // Record old head for check below
         setHead(node);
         /*
+        如果好`
          * Try to signal next queued node if:
          *   Propagation was indicated by caller,
          *     or was recorded (as h.waitStatus either before
@@ -768,6 +770,9 @@ public abstract class AbstractQueuedSynchronizer
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
             int ws;
+            // 如果当前节点不是head的后继节点，1:判断当前节点前驱节点的是否为SIGNAL，2:如果不是，则把前驱节点设置为SINGAL看是否成功
+            // 如果1和2中有一个为true，再判断当前节点的线程是否为null
+            // 如果上述条件都满足，把当前节点的前驱节点的后继指针指向当前节点的后继节点--其实就是从链表中删除了当前节点，并且要保证nextNode是在park中，所以prevNode的ws需要设置为-1
             if (pred != head &&
                 ((ws = pred.waitStatus) == Node.SIGNAL ||
                  (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
@@ -776,6 +781,8 @@ public abstract class AbstractQueuedSynchronizer
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
+                // TODO:如果当前节点是head的后继节点，或者上述条件不满足，那就唤醒当前节点的后继节点???
+                //  为啥要唤醒有效的后继节点呢？如果锁正被其他线程持有中，即使当前node被中断或超时了，它的successor也不应该被唤醒吧--唤醒了也不要紧，再次自旋获取锁，失败的话继续park
                 unparkSuccessor(node);
             }
 
@@ -871,6 +878,15 @@ public abstract class AbstractQueuedSynchronizer
                     interrupted = true;
             }
         } finally {
+            // TODO:哪种场景会进入这里？
+            /**
+             * 无论try正常return还是throw exception 都会执行到finally，所以问题在于何种场景可以从
+             * 如上的for退出且failed为true。可是正常的return时failed肯定为true,所以就只有抛异常的
+             * 时才算是cancel 吗？那是否可以说明不支持中断也不支持超时的获取锁逻辑是不支持cancel的？
+             *
+             * doAcquireInterruptibly中如果被中断了是会抛异常，从而执行到cancel逻辑
+             * doAcquireNanos中超时或中断，也会执行到cancel
+             */
             if (failed)
                 cancelAcquire(node);
         }
@@ -930,6 +946,12 @@ public abstract class AbstractQueuedSynchronizer
                 if (nanosTimeout <= 0L)
                     return false;
                 if (shouldParkAfterFailedAcquire(p, node) &&
+                        // 设置spinForTimeoutThreshold是为了在循环（占用cpu)和park(切换线程上下文)的损耗之间获取平衡
+                        /** 如果nanosTimeout小于等于spinForTimeoutThreshold(1000纳秒)时，将不会使该线程进行 超时等待，
+                         * 而是进入快速的自旋过程。原因在于，非常短的超时等待无法做到十分精确，如果 这时再进行超时等待，
+                         * 相反会让nanosTimeout的超时从整体上表现得反而不精确。--By Java并发编程的艺术
+                         *
+                         */
                     nanosTimeout > spinForTimeoutThreshold)
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
@@ -946,15 +968,18 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      */
     private void doAcquireShared(int arg) {
+        // 加入syncQueue
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
             boolean interrupted = false;
             for (;;) {
+                // prev节点
                 final Node p = node.predecessor();
                 if (p == head) {
                     int r = tryAcquireShared(arg);
                     if (r >= 0) {
+                        // 获取到同步状态
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1682,6 +1707,8 @@ public abstract class AbstractQueuedSynchronizer
          */
         Node p = enq(node);
         int ws = p.waitStatus;
+        // 如上注释，ws>0即cancelled肯定要唤醒正在park的线程，
+        // 或者node的prev设置成-1时失败则说明上一行的ws与CAS时的ws不同(这种是什么场景呢？)，由于prev的ws不是-1，所以node不能被park
         if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
             LockSupport.unpark(node.thread);
         return true;
@@ -1720,6 +1747,7 @@ public abstract class AbstractQueuedSynchronizer
         boolean failed = true;
         try {
             int savedState = getState();
+            // await释放锁，释放这个线程获取的多次锁。如果是共享锁勒？
             if (release(savedState)) {
                 failed = false;
                 return savedState;
@@ -1852,6 +1880,7 @@ public abstract class AbstractQueuedSynchronizer
                 unlinkCancelledWaiters();
                 t = lastWaiter;
             }
+            // 从后插入condition queue
             Node node = new Node(Thread.currentThread(), Node.CONDITION);
             if (t == null)
                 firstWaiter = node;
@@ -1869,9 +1898,12 @@ public abstract class AbstractQueuedSynchronizer
          */
         private void doSignal(Node first) {
             do {
+                // 从condition queue中删除第一个元素
                 if ( (firstWaiter = first.nextWaiter) == null)
                     lastWaiter = null;
                 first.nextWaiter = null;
+
+                // first放入SYNC Queue
             } while (!transferForSignal(first) &&
                      (first = firstWaiter) != null);
         }
@@ -2000,6 +2032,7 @@ public abstract class AbstractQueuedSynchronizer
          */
         private int checkInterruptWhileWaiting(Node node) {
             return Thread.interrupted() ?
+                    // 此处会将node移到SYNC queue
                 (transferAfterCancelledWait(node) ? THROW_IE : REINTERRUPT) :
                 0;
         }
@@ -2032,19 +2065,30 @@ public abstract class AbstractQueuedSynchronizer
         public final void await() throws InterruptedException {
             if (Thread.interrupted())
                 throw new InterruptedException();
+            // 新建node并加入condition queue
             Node node = addConditionWaiter();
+            // 释放锁
             int savedState = fullyRelease(node);
             int interruptMode = 0;
+
             while (!isOnSyncQueue(node)) {
+                // 不在SYNC queue时，阻塞当前线程
                 LockSupport.park(this);
+                // 被唤醒后,检查是否是被中断的。此处要么是被另一线程中断，要么是被syncQueue中释放锁的线程unpark了
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
             }
+
+            // 另一线程的signal会将node放入sync queue,所以这里是在sync queue中请求锁--
+            // 如果在signal之前，当前线程的park就被interrupt了则此node其实还在condition queue中
+            // --不会，上文的checkInterruptWhileWaiting中会判断如果node仍在conditionQueue中，则会移到syncQueue中
+            // 执行acquireQueued时会继续请求锁
             if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
                 interruptMode = REINTERRUPT;
             if (node.nextWaiter != null) // clean up if cancelled
                 unlinkCancelledWaiters();
             if (interruptMode != 0)
+                // 保留interrupt Status,
                 reportInterruptAfterWait(interruptMode);
         }
 

@@ -467,6 +467,8 @@ public class ReentrantReadWriteLock
                 getExclusiveOwnerThread() != current)
                 return -1;
             int r = sharedCount(c);
+
+            // TODO:这块再好好看看，共享和独占的区别
             if (!readerShouldBlock() &&
                 r < MAX_COUNT &&
                 compareAndSetState(c, c + SHARED_UNIT)) {
