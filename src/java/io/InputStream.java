@@ -158,6 +158,7 @@ public abstract class InputStream implements Closeable {
      * <code>b.length - off</code>
      * @see        java.io.InputStream#read()
      */
+    // blocking
     public int read(byte b[], int off, int len) throws IOException {
         if (b == null) {
             throw new NullPointerException();

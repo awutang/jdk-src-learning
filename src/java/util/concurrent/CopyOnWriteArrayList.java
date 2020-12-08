@@ -1147,6 +1147,11 @@ public class CopyOnWriteArrayList<E>
             return cursor > 0;
         }
 
+        /**
+         * CopyOnWriteArrayList.COWIterator中的next()不会像ArrayList.Itr的next()去校验modCount与expectedModCount是否相等，因此
+         *  * 可以安全地进行循环，因此是fail-safe的
+         * @return
+         */
         @SuppressWarnings("unchecked")
         public E next() {
             if (! hasNext())

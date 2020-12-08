@@ -158,6 +158,7 @@ public class BufferedReader extends Reader {
 
         int n;
         do {
+            // 此处才是真正地从流中读取数据
             n = in.read(cb, dst, cb.length - dst);
         } while (n == 0);
         if (n > 0) {

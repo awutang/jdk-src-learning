@@ -378,19 +378,23 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * that workerCount is 0 (which sometimes entails a recheck -- see
      * below).
      */
+    // 用32位的int字段，高三位表示线程池的状态、低29位表示线程池中的线程数量.
+    // 为啥要有这个ctl字段呢？保证在多线程环境下运行状态和线程数量的统一，放在一个AtomicInteger中，可以保证原子性
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
+    // 29
     private static final int COUNT_BITS = Integer.SIZE - 3;
-    private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
+    // CAPACITY是前3位0，后29位为1，因此与ctl的value位&可得到后ctl的后29位的值即workerCount，同理runState也可得
+    private static final int CAPACITY   = (1 << COUNT_BITS) - 1;// 000111....111
 
     // runState is stored in the high-order bits
-    private static final int RUNNING    = -1 << COUNT_BITS;
-    private static final int SHUTDOWN   =  0 << COUNT_BITS;
-    private static final int STOP       =  1 << COUNT_BITS;
-    private static final int TIDYING    =  2 << COUNT_BITS;
-    private static final int TERMINATED =  3 << COUNT_BITS;
+    private static final int RUNNING    = -1 << COUNT_BITS; // 101000...000 110111...111 111000...000(补码，正是在计算机中存储的值)
+    private static final int SHUTDOWN   =  0 << COUNT_BITS; // 000000...000
+    private static final int STOP       =  1 << COUNT_BITS; // 001000...000
+    private static final int TIDYING    =  2 << COUNT_BITS; // 010000...000
+    private static final int TERMINATED =  3 << COUNT_BITS; // 011000...000
 
     // Packing and unpacking ctl
-    private static int runStateOf(int c)     { return c & ~CAPACITY; }
+    private static int runStateOf(int c)     { return c & ~CAPACITY; } // ~取反
     private static int workerCountOf(int c)  { return c & CAPACITY; }
     private static int ctlOf(int rs, int wc) { return rs | wc; }
 
@@ -913,7 +917,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
 
             for (;;) {
                 int wc = workerCountOf(c);
+                // 如果线程数超过系统限制的，则直接返回false
                 if (wc >= CAPACITY ||
+                        // 根据core判断当前创建线程是否在核心线程阶段(即corePoolSize还未满之时进入当前方法，但可能其他任务在这之间提交导致线程数超过了)，
+                        // 如果是，则比较若超过corePoolSize不再创建线程；如果不是则说明是在任务队列满了之后的新增线程，所以要与maximumPoolSize比较
                     wc >= (core ? corePoolSize : maximumPoolSize))
                     return false;
                 if (compareAndIncrementWorkerCount(c))
@@ -1059,6 +1066,14 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             int wc = workerCountOf(c);
 
             // Are workers subject to culling?
+            /**在allowCoreThreadTimeOut为false时
+             *  1.如果线程数量超过了corePoolSize则timed=true,一旦有线程在keepAliveTime内没有获取到task(timedOut为true)即线程空闲了keepAliveTime,则此线程会被销毁
+             *  2. 如果线程数不超过corePoolSize则timed为false，无论线程是否空闲了keepAliveTime都不会被销毁，正好是核心线程的概念
+             *
+             * 在allowCoreThreadTimeOut为true时timed=true，只要有线程在keepAliveTime内没有获取到task(timedOut为true)即线程空闲了keepAliveTime,则此线程会被销毁
+             *
+             * 所以allowCoreThreadTimeOut就是给核心线程加了一个超时限制，核心线程再也不能无限期存活了
+             */
             boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
 
             if ((wc > maximumPoolSize || (timed && timedOut))
@@ -1074,6 +1089,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     workQueue.take();
                 if (r != null)
                     return r;
+                // 如果没有获取到任务，要么是keepAliveTime未获取到，要么是队列中没有task了
                 timedOut = true;
             } catch (InterruptedException retry) {
                 timedOut = false;
@@ -1164,6 +1180,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             }
             completedAbruptly = false;
         } finally {
+            // 从workerSet删除此Worker，之后给gc回收
             processWorkerExit(w, completedAbruptly);
         }
     }
