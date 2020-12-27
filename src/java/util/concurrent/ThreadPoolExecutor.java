@@ -1343,6 +1343,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
     /**
+     * ExecutorService.submit被调用时，会执行execute
      * Executes the given task sometime in the future.  The task
      * may execute in a new thread or in an existing pooled thread.
      *
@@ -2053,6 +2054,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
             if (!e.isShutdown()) {
                 r.run();
+
             }
         }
     }

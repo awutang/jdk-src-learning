@@ -57,6 +57,8 @@ public abstract class AbstractSelectableChannel
     // Keys that have been created by registering this channel with selectors.
     // They are saved because if this channel is closed the keys must be
     // deregistered.  Protected by keyLock.
+
+    // TODO:一个channel会在多个selector上注册吗？
     //
     private SelectionKey[] keys = null;
     private int keyCount = 0;
@@ -115,6 +117,11 @@ public abstract class AbstractSelectableChannel
         keyCount++;
     }
 
+    /**
+     * 找出具有相同selector的selectionKey
+     * @param sel
+     * @return
+     */
     private SelectionKey findKey(Selector sel) {
         synchronized (keyLock) {
             if (keys == null)
@@ -193,12 +200,16 @@ public abstract class AbstractSelectableChannel
         throws ClosedChannelException
     {
         synchronized (regLock) {
+            // verifies that this channel is open and that the
+            //     * given initial interest set is valid.
             if (!isOpen())
                 throw new ClosedChannelException();
+            // 校验是否为支持的操作
             if ((ops & ~validOps()) != 0)
                 throw new IllegalArgumentException();
             if (blocking)
                 throw new IllegalBlockingModeException();
+
             SelectionKey k = findKey(sel);
             if (k != null) {
                 k.interestOps(ops);

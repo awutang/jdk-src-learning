@@ -223,6 +223,7 @@ public final class ServiceLoader<S>
         service = Objects.requireNonNull(svc, "Service interface cannot be null");
         loader = (cl == null) ? ClassLoader.getSystemClassLoader() : cl;
         acc = (System.getSecurityManager() != null) ? AccessController.getContext() : null;
+        // providers.clear() lookupIterator初始化
         reload();
     }
 
@@ -341,10 +342,13 @@ public final class ServiceLoader<S>
             }
             if (configs == null) {
                 try {
+                    // service:java.sql.Driver.class->service.getName():java.sql.Driver
+                    // META-INF/services/java.sql.Driver
                     String fullName = PREFIX + service.getName();
                     if (loader == null)
                         configs = ClassLoader.getSystemResources(fullName);
                     else
+                        // loader是在Launcher中设置的AppClassLoader对象
                         configs = loader.getResources(fullName);
                 } catch (IOException x) {
                     fail(service, "Error locating configuration files", x);
@@ -354,6 +358,7 @@ public final class ServiceLoader<S>
                 if (!configs.hasMoreElements()) {
                     return false;
                 }
+                // 将META-INF/services/java.sql.Driver文件中的内容解析出来
                 pending = parse(service, configs.nextElement());
             }
             nextName = pending.next();
@@ -363,10 +368,22 @@ public final class ServiceLoader<S>
         private S nextService() {
             if (!hasNextService())
                 throw new NoSuchElementException();
+            // 这是之前解析META-INF/services/java.sql.Driver文件时将文件中的内容赋值给了nextName
             String cn = nextName;
             nextName = null;
             Class<?> c = null;
             try {
+                // 反射，类加载得到Class对象,会执行如下static
+                /**
+                 * com.mysql.jdbc.Driver中的static代码块
+                 * static {
+                 *         try {
+                 *             java.sql.DriverManager.registerDriver(new Driver());
+                 *         } catch (SQLException E) {
+                 *             throw new RuntimeException("Can't register driver!");
+                 *         }
+                 *     }
+                 */
                 c = Class.forName(cn, false, loader);
             } catch (ClassNotFoundException x) {
                 fail(service,
@@ -377,8 +394,11 @@ public final class ServiceLoader<S>
                      "Provider " + cn  + " not a subtype");
             }
             try {
+                // 反射，根据Class对象得到具体实例
                 S p = service.cast(c.newInstance());
+                // 原来providers在这里设置值的 com.mysql.jdbc.Driver:对应实例
                 providers.put(cn, p);
+                // 返回com.mysql.jdbc.Driver实例
                 return p;
             } catch (Throwable x) {
                 fail(service,
@@ -389,6 +409,8 @@ public final class ServiceLoader<S>
         }
 
         public boolean hasNext() {
+            // acc = (System.getSecurityManager() != null) ? AccessController.getContext() : null;
+            // ServiceLoader初始化时没有设置securityManager,因此acc==null
             if (acc == null) {
                 return hasNextService();
             } else {
@@ -465,10 +487,12 @@ public final class ServiceLoader<S>
     public Iterator<S> iterator() {
         return new Iterator<S>() {
 
+            // providers中还没有set值，因此knownProviders中也无数据
             Iterator<Map.Entry<String,S>> knownProviders
                 = providers.entrySet().iterator();
 
             public boolean hasNext() {
+                // knownProviders中无数据,因此走下面的分支
                 if (knownProviders.hasNext())
                     return true;
                 return lookupIterator.hasNext();
@@ -477,6 +501,7 @@ public final class ServiceLoader<S>
             public S next() {
                 if (knownProviders.hasNext())
                     return knownProviders.next().getValue();
+                // knownProviders中无数据,因此走下面的分支
                 return lookupIterator.next();
             }
 
@@ -534,9 +559,21 @@ public final class ServiceLoader<S>
      * @return A new service loader
      */
     public static <S> ServiceLoader<S> load(Class<S> service) {
+        // TODO:这里为啥要用thread.contextClassLoader?--因为BootStrapLoader无法加载外部Driver类？
+        // 但是加载外部Driver的时候用ClassLoader.load()也是可以的啊，因为逻辑中如果parent和bootStrap都无法加载的话会用自身类加载器
+        //  1.自身类加载器是AppClassLoader吗？--其实不是，应该是jvm在加载某个类时先判断类所在路径，如果是在ClassPath下的，
+        //  先调用Launcher#AppClassLoader.loadClass()-》super.loadClass()即ClassLoader.loadClass(String name, boolean resolve),这其中就是双亲委派模型的体现
+        //  2.AppClassLoader负责加载ClassPath下的类，第三方的包比如mysql driver实现类并不在ClassPath之下，所以需要用在应用启动时指定thread.contextClassLoader
+        // 然后在需要加载第三方包时去获取thread.contextClassLoader。--driver第三方包其实是打包到了lib目录下的，是属于ClassPath目录的；tomcat包才是不在
+        // classpath下的，因为tomcat包可能给多个应用公用，所以不在classpath之下的类的加载需要自定义ClassLoader实现(指定自定义路径)
+        //      1.但是，应用启动时指定的thread.contextClassLoader也是AppClassLoader,它能加载的路径就是ClassPath呀，如何能够把第三方包的路径加进来呢--自定义classLoader
+        //
+
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         return ServiceLoader.load(service, cl);
     }
+
+
 
     /**
      * Creates a new service loader for the given service type, using the

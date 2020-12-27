@@ -30,6 +30,7 @@ import java.io.IOException;
 
 
 /**
+ * 封装了特定的通道与特定的选择器的注册关系，英文注释说的挺清晰的
  * A token representing the registration of a {@link SelectableChannel} with a
  * {@link Selector}.
  *
@@ -250,6 +251,8 @@ public abstract class SelectionKey {
      * connection sequence, or has an error pending, then it will add
      * <tt>OP_CONNECT</tt> to the key's ready set and add the key to its
      * selected-key&nbsp;set.  </p>
+     *
+     * 与OP_ACCEPT的区别：OP_CONNECT是某端主动发起连接，OP_ACCEPT是接受另一端的连接
      */
     public static final int OP_CONNECT = 1 << 3;
 

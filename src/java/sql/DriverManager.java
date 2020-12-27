@@ -558,6 +558,7 @@ public class DriverManager {
                 result = false;
             }
 
+            // 如果用classLoader得到的aClass与初始化DriverManager时得到的driver.class不一样，则说明使用的ClassLoader不同
              result = ( aClass == driver.getClass() ) ? true : false;
         }
 
@@ -583,6 +584,9 @@ public class DriverManager {
         AccessController.doPrivileged(new PrivilegedAction<Void>() {
             public Void run() {
 
+                // 开始spi的服务发现机制
+                // Java JDBC 源码是通过 DriverManager 这个类进行数据接口的开放。
+                // 而在 Java SPI 机制则是通过 ServiceLoader 类进行特定配置文档的扫描和读取，从而实现框架扩展的功能。
                 ServiceLoader<Driver> loadedDrivers = ServiceLoader.load(Driver.class);
                 Iterator<Driver> driversIterator = loadedDrivers.iterator();
 
@@ -657,10 +661,14 @@ public class DriverManager {
 
         for(DriverInfo aDriver : registeredDrivers) {
             // If the caller does not have permission to load the driver then
-            // skip it.
+            // skip it. TODO:为啥是根据调用者所属类的classLoader来判断？
+            //  --因为初始化DriverManager与调用connection()在同一个线程中，所以初始化DriverManager时所用的classLoader与调用connection()调用类的类加载器
+            // 需要一样？如果不一样会有什么问题呢？--难道是不一样会导致初始化DriverManager时所加载的类与调用connection()时所加载的类不一样，即使是同一个类？
+            // 这确实会乱套
             if(isDriverAllowed(aDriver.driver, callerCL)) {
                 try {
                     println("    trying " + aDriver.driver.getClass().getName());
+                    // 这里如果url中是jdbc:mysql的，而driver是oracle的，那么连接肯定报错，再次循环就可以获取到mysql的driver了
                     Connection con = aDriver.driver.connect(url, info);
                     if (con != null) {
                         // Success!
