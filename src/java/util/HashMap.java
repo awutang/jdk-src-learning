@@ -374,15 +374,21 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * Returns a power of two size for the given target capacity.
+     *
+     * 大于输入参数且最近的2的整数次幂的数
      */
     static final int tableSizeFor(int cap) {
         int n = cap - 1;
-        n |= n >>> 1;
-        n |= n >>> 2;
-        n |= n >>> 4;
-        n |= n >>> 8;
-        n |= n >>> 16;
+        n |= n >>> 1; // 得到两位11 0...01xxx...xxx|0...001xx...xxx=0...011xx...xxx
+        n |= n >>> 2; // 1111
+        n |= n >>> 4; // 8个1
+        n |= n >>> 8; // 16个1
+        n |= n >>> 16; // 最多32个1，要么右移使得1减少了，但是位或没有损失
         return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
+    }
+
+    public static void main(String[] args) {
+        tableSizeFor(54);
     }
 
     /* ---------------- Fields -------------- */

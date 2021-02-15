@@ -58,8 +58,8 @@ public abstract class AbstractSelectableChannel
     // They are saved because if this channel is closed the keys must be
     // deregistered.  Protected by keyLock.
 
-    // TODO:一个channel会在多个selector上注册吗？
-    //
+    // 一个channel会在多个selector上注册吗？
+    // --应该是，一个Channel对象可以注册到多个Selector对象，一个Selector对象可以接受多个Channel对象的注册，多对多的关系
     private SelectionKey[] keys = null;
     private int keyCount = 0;
 
@@ -192,8 +192,13 @@ public abstract class AbstractSelectableChannel
      * @throws  IllegalSelectorException {@inheritDoc}
      *
      * @throws  CancelledKeyException {@inheritDoc}
+     * If this channel is currently registered with the given selector
+     *      *          but the corresponding key has already been cancelled
      *
      * @throws  IllegalArgumentException {@inheritDoc}
+     *
+     * 参数att的作用：可以将att在Channel对象注册阶段存入selectionKey对象，之后Channel接收到网络事件通知时比如可读时，
+     * 再获取selectionKey对象并从中获取att
      */
     public final SelectionKey register(Selector sel, int ops,
                                        Object att)
@@ -212,6 +217,7 @@ public abstract class AbstractSelectableChannel
 
             SelectionKey k = findKey(sel);
             if (k != null) {
+                // 此处会校验k是否valid,否则抛出CancelledKeyException
                 k.interestOps(ops);
                 k.attach(att);
             }

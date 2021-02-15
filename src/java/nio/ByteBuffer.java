@@ -275,6 +275,13 @@ public abstract class ByteBuffer
     // Creates a new buffer with the given mark, position, limit, capacity,
     // backing array, and array offset
     //
+    // super(-1, off, off + len, buf.length, buf, 0);
+    // return new HeapByteBuffer(hb,
+    //                                        -1,
+    //                                        0,
+    //                                        this.remaining(),
+    //                                        this.remaining(),
+    //                                        this.position() + offset);
     ByteBuffer(int mark, int pos, int lim, int cap,   // package-private
                  byte[] hb, int offset)
     {

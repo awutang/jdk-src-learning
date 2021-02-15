@@ -33,7 +33,10 @@ import sun.misc.Unsafe;
 import sun.misc.VM;
 import sun.nio.ch.DirectBuffer;
 
-
+/**
+ * 只能存储字节数据
+ * IO性能更好，可以省一次cpu copy
+ */
 class DirectByteBuffer
 
     extends MappedByteBuffer
@@ -86,11 +89,15 @@ class DirectByteBuffer
             this.capacity = capacity;
         }
 
+        /**
+         * 在回收DirectByteBuffer对象时执行的逻辑
+         */
         public void run() {
             if (address == 0) {
                 // Paranoia
                 return;
             }
+            // 回收堆外内存
             unsafe.freeMemory(address);
             address = 0;
             Bits.unreserveMemory(size, capacity);
@@ -98,6 +105,7 @@ class DirectByteBuffer
 
     }
 
+    // cleaner是虚引用在jdk中的典型应用场景
     private final Cleaner cleaner;
 
     public Cleaner cleaner() { return cleaner; }
@@ -115,31 +123,40 @@ class DirectByteBuffer
     // Primary constructor
     //
     DirectByteBuffer(int cap) {                   // package-private
-
+        // 调用DirectByteBuffer构造方法，为字段赋值
         super(-1, 0, cap, cap);
+        // 分配的直接内存是否按照页对齐
         boolean pa = VM.isDirectMemoryPageAligned();
+        // 一页直接内存的大小（以byte为单位）
         int ps = Bits.pageSize();
+        // 分配的内存大小，如果按照页对齐，还得加一页内存的容量大小，我们只需要分析pa为false的情况就好了
         long size = Math.max(1L, (long)cap + (pa ? ps : 0));
+        // 预分配内存：保存总内存大小和实际内存大小 size-reservedMemory cap-totalCapacity
+        // 预分配内存就是在真正的分配内存时，先判断堆外内存空闲空间是否足够：如果不够则触发Cleaner.clean()回收堆外内存，
         Bits.reserveMemory(size, cap);
 
         long base = 0;
         try {
+            // 以指定的size，分配直接内存，返回的是分配的堆外内存的基地址 myConfusion:直接内存的分配与回收是啥样的？
             base = unsafe.allocateMemory(size);
         } catch (OutOfMemoryError x) {
             Bits.unreserveMemory(size, cap);
             throw x;
         }
+        // 给刚分配的内存初始化为零值
         unsafe.setMemory(base, size, (byte) 0);
+
+        // 将分配的内存按页对齐，因此得出新的基地址（这个address是分配内存的起始地址，之后的数据读写以它作为基准）
         if (pa && (base % ps != 0)) {
-            // Round up to page boundary
+            // Round up to page boundary 向上取整（向上取到页面边界）
             address = base + ps - (base & (ps - 1));
         } else {
+            // pa==false
             address = base;
         }
+        // 创建用于回收this对象的清理者，当DirectByteBuffer对象（在堆内的）被回收时，释放其对应的堆外内存
         cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
         att = null;
-
-
 
     }
 
@@ -242,6 +259,7 @@ class DirectByteBuffer
     }
 
     private long ix(int i) {
+        // address是之前分配的那一块直接内存的起始地址，与position、limit等配合使用，维护一个buffer对象对应的一块直接内存
         return address + ((long)i << 0);
     }
 
@@ -269,14 +287,6 @@ class DirectByteBuffer
             int rem = (pos <= lim ? lim - pos : 0);
             if (length > rem)
                 throw new BufferUnderflowException();
-
-
-
-
-
-
-
-
                 Bits.copyToArray(ix(pos), dst, arrayBaseOffset,
                                  (long)offset << 0,
                                  (long)length << 0);
@@ -351,6 +361,13 @@ class DirectByteBuffer
 
     }
 
+    /**
+     * 从src的offset处将length个byte复制到当前直接内存
+     * @param src
+     * @param offset
+     * @param length
+     * @return
+     */
     public ByteBuffer put(byte[] src, int offset, int length) {
 
         if (((long)length << 0) > Bits.JNI_COPY_FROM_ARRAY_THRESHOLD) {
@@ -361,15 +378,6 @@ class DirectByteBuffer
             int rem = (pos <= lim ? lim - pos : 0);
             if (length > rem)
                 throw new BufferOverflowException();
-
-
-
-
-
-
-
-
-
                 Bits.copyFromArray(src, arrayBaseOffset,
                                    (long)offset << 0,
                                    ix(pos),

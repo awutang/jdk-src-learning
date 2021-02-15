@@ -78,6 +78,12 @@ class HeapByteBuffer
 
     }
 
+    // return new HeapByteBuffer(hb,
+    //                                        -1,
+    //                                        0,
+    //                                        this.remaining(),
+    //                                        this.remaining(),
+    //                                        this.position() + offset);
     protected HeapByteBuffer(byte[] buf,
                                    int mark, int pos, int lim, int cap,
                                    int off)

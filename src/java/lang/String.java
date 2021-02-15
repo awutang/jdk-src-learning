@@ -40,6 +40,11 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
+ * java中的String不是基本类型，底层是char[],因此字节数不限制（因为在class文件的规范中，
+ * CONSTANT_Utf8_info表中使用一个16位的无符号整数来记录字符串的长 度的，最多能表示 65536(2^16)个字节，
+ * 而java class 文件是使用一种变体UTF-8格式来存放字符的，null值使用两个字节来表示，
+ * 因此只剩 下 65536－ 2 ＝ 65534个字节）；但是C++中的string是基本类型，占8个字节，千万不要搞混了！！！！
+ *
  * The {@code String} class represents character strings. All
  * string literals in Java programs, such as {@code "abc"}, are
  * implemented as instances of this class.

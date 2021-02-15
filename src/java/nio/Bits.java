@@ -643,45 +643,62 @@ class Bits {                            // package-private
     static void reserveMemory(long size, int cap) {
 
         if (!memoryLimitSet && VM.isBooted()) {
+            // maxMemory代表最大堆外内存，由XX:MaxDirectMemorySize=<size>指定
             maxMemory = VM.maxDirectMemory();
             memoryLimitSet = true;
         }
 
         // optimist!
+        // 1. 如果堆外内存还有空间，则直接返回
         if (tryReserveMemory(size, cap)) {
             return;
         }
 
+        // 到这里说明堆外内存剩余空间不足了
         final JavaLangRefAccess jlra = SharedSecrets.getJavaLangRefAccess();
 
         // retry while helping enqueue pending Reference objects
         // which includes executing pending Cleaner(s) which includes
         // Cleaner(s) that free direct buffer memory
+        // 2. 堆外内存进行回收，最终会调用到Cleaner#clean的方法(ReferenceHandler的逻辑)。--这个是主动执行到的，不是由jvm gc从而让ReferenceHandler线程执行到的
+        // 如果目前没有堆外内存可以回收(没有可回收的对象则discoveredList中不会有数据，那么pendingList中也不会有数据)则跳过该循环
         while (jlra.tryHandlePendingReference()) {
+            // 回收了之后如果堆外内存够用了，则返回
             if (tryReserveMemory(size, cap)) {
                 return;
             }
         }
 
         // trigger VM's Reference processing
+        // 3. System.gc():会触发full gc,但如果-XX:+ DisableExplicitGC值为true,也不会执行full gc
+        // 触发full gc是为了避免如果DirectByteBuffer对象进入了old generation而迟迟无法被回收的情况？
+        // --是的，DirectByteBuffer对象可能活过15次进入og,但og的回收频率低，所以如果DirectByteBuffer对象不被jvm发现需要回收的话，
+        // 对应的Reference对象无法加入到discoveredList中，最终ReferenceHandler线程就无法执行到Cleaner.clean()，从而DirectByteBuffer对象引用的一大块堆外内存也没办法回收了
         System.gc();
 
         // a retry loop with exponential back-off delays
         // (this gives VM some time to do it's job)
+        // 4. 重复上面的过程
         boolean interrupted = false;
         try {
             long sleepTime = 1;
             int sleeps = 0;
+            // 循环直至堆外空闲内存足够本次cap分配或者超时报OOM
             while (true) {
+                // 4.1 判断空闲的堆外内存是否足够
                 if (tryReserveMemory(size, cap)) {
                     return;
                 }
+                // 休眠次数限制
                 if (sleeps >= MAX_SLEEPS) {
                     break;
                 }
+                // 4.2 主动触发Cleaner.clean()
                 if (!jlra.tryHandlePendingReference()) {
+                    // jlra.tryHandlePendingReference()==false表示目前没有可回收的对象
                     try {
                         Thread.sleep(sleepTime);
+                        // 休眠时间倍增
                         sleepTime <<= 1;
                         sleeps++;
                     } catch (InterruptedException e) {
@@ -690,7 +707,12 @@ class Bits {                            // package-private
                 }
             }
 
+            // max. number of sleeps during try-reserving with exponentially
+            // increasing delay before throwing OutOfMemoryError:
+            // 1, 2, 4, 8, 16, 32, 64, 128, 256 (total 511 ms ~ 0.5 s)
+            // which means that OOME will be thrown after 0.5 s of trying
             // no luck
+            // 5. 0.5s之后抛出OOM
             throw new OutOfMemoryError("Direct buffer memory");
 
         } finally {
@@ -701,20 +723,28 @@ class Bits {                            // package-private
         }
     }
 
+    /**
+     * size和cap主要是page对齐的区别，这里我们把两者看作是相等的
+     * @param size
+     * @param cap
+     * @return
+     */
     private static boolean tryReserveMemory(long size, int cap) {
 
         // -XX:MaxDirectMemorySize limits the total capacity rather than the
         // actual memory usage, which will differ when buffers are page
         // aligned.
         long totalCap;
+        // cap <= maxMemory - (totalCap = totalCapacity.get())==true:堆外内存剩余空间足够本次cap分配时
         while (cap <= maxMemory - (totalCap = totalCapacity.get())) {
+            // 更新 myConfusion：reservedMemory是实际内存使用大小？totalCapacity是理论上使用内存大小？maxMemory限制的是totalCapacity
             if (totalCapacity.compareAndSet(totalCap, totalCap + cap)) {
                 reservedMemory.addAndGet(size);
                 count.incrementAndGet();
                 return true;
             }
         }
-
+        // 堆外内存不足
         return false;
     }
 

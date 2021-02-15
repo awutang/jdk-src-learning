@@ -201,6 +201,10 @@ import java.util.Set;
  *
  * @see SelectableChannel
  * @see SelectionKey
+ *
+ * myConfusion:Selector实现了通过一个线程管理多个Channel，从而管理多个网络连接的目的,一个selector实例只对应一个线程吗？
+ * -- 我知道了，其实是服务端与客户端的区别，对于服务端只有一个Channel,因此只有一个NioEventLoop即对应一个线程；
+ * 但是客户端可以有多个，但是每一个客户端也只有一个channel,一个NioEventLoop即对应一个线程；所以服务端一个线程，可以管理多个客户端channel
  */
 
 public abstract class Selector implements Closeable {
@@ -358,7 +362,7 @@ public abstract class Selector implements Closeable {
      * will return immediately.  If no selection operation is currently in
      * progress then the next invocation of one of these methods will return
      * immediately unless the {@link #selectNow()} method is invoked in the
-     * meantime.  In any case the value returned by that invocation may be
+     * meantime（同时）.  In any case the value returned by that invocation may be
      * non-zero.  Subsequent invocations of the {@link #select()} or {@link
      * #select(long)} methods will block as usual unless this method is invoked
      * again in the meantime.

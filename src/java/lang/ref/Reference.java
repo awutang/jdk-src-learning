@@ -91,11 +91,15 @@ public abstract class Reference<T> {
 
     private T referent;         /* Treated specially by GC */
 
+    // 回收队列，由使用者在Reference的构造方法中指定，
+    // 队列中的元素是Reference对象还是referent？--经debug验证是Reference对象
     volatile ReferenceQueue<? super T> queue;
 
     /* When active:   NULL
      *     pending:   this
      *    Enqueued:   next reference in queue (or this if last)
+     * 当该引用被加入到queue中的时候，该字段被设置为queue中的下一个元素，以形成链表结构，由jvm维护
+     *
      *    Inactive:   this
      */
     @SuppressWarnings("rawtypes")
@@ -104,6 +108,9 @@ public abstract class Reference<T> {
     /* When active:   next element in a discovered reference list maintained by GC (or this if last)
      *     pending:   next element in the pending list (or null if last)
      *   otherwise:   NULL
+     *
+     *  在GC时，JVM底层会维护一个叫DiscoveredList的链表，存放的是Reference对象，discovered字段指向的就是链表中的下一个元素，由JVM设置
+
      */
     transient private Reference<T> discovered;  /* used by VM */
 
@@ -121,10 +128,19 @@ public abstract class Reference<T> {
      * References to this list, while the Reference-handler thread removes
      * them.  This list is protected by the above lock object. The
      * list uses the discovered field to link its elements.
+     *
+     * 	等待加入queue的Reference对象，在GC时由JVM设置，
+     * 会有一个java层的线程(ReferenceHandler)源源不断的从pending中提取元素加入到queue
+
      */
     private static Reference<Object> pending = null;
 
     /* High-priority thread to enqueue pending References
+
+    对于DirectByteBuf中的回收cleaner:
+    首先，DirectBuffer buf 如果已经没有强引用了，那么JVM在执行gc时就会发现只有一个Cleaner还在引用着这个buf，那么就会把与此buf相关的那个cleaner放到一个名为pending的链表里。这个链表是通过Reference.discovered域连接在一起的。
+    接着，Reference Handler这个线程会不断地从这个pending链表上取出新的对象来。它可能是WeakReference，也可能是SoftReference，当然也可能是PhantomReference和Cleaner。
+    最后，如果是Cleaner，那就直接调用Cleaner的clean方法，然后就结束了。其他的情况下，要交给这个对象所关联的queue，以便于后续的处理
      */
     private static class ReferenceHandler extends Thread {
 
@@ -176,10 +192,12 @@ public abstract class Reference<T> {
         Cleaner c;
         try {
             synchronized (lock) {
+                // pending由jvm gc时设置，其实是gc时jvm将发现的垃圾对象对应的Reference对象加入discoveredList，再从discoveredList移到pendingList
                 if (pending != null) {
                     r = pending;
                     // 'instanceof' might throw OutOfMemoryError sometimes
                     // so do this before un-linking 'r' from the 'pending' chain...
+                    // 若是Cleaner对象则记录下来
                     c = r instanceof Cleaner ? (Cleaner) r : null;
                     // unlink 'r' from 'pending' chain
                     pending = r.discovered;
@@ -187,6 +205,7 @@ public abstract class Reference<T> {
                 } else {
                     // The waiting on the lock may cause an OutOfMemoryError
                     // because it may try to allocate exception objects.
+                    // 应用触发的堆外内存回收：waitForNotify==false时，不会进入等待，直接返回false（因为pending为空，表明没有需要回收的referent对象）
                     if (waitForNotify) {
                         lock.wait();
                     }
@@ -208,11 +227,18 @@ public abstract class Reference<T> {
         }
 
         // Fast path for cleaners
+        // 需要注意的是，对于Cleaner类型（继承自虚引用）的对象会有额外的处理：
+        // 在其referent指向的对象被回收(对象已经没有强引用了)时，会调用clean方法，该方法主要是用来做对应的资源回收，
+        // 在堆外内存DirectByteBuffer中就是用Cleaner进行堆外内存的回收，这也是虚引用在java中的典型应用。
+        // 此处cleaner.referent已经是null了，何时做的？--难道是jvm?--经debug,是jvm做的，pending中的referent就是null
         if (c != null) {
+            // 如果是Clean对象，则调用clean()
             c.clean();
             return true;
         }
 
+        // 将Reference对象加入到ReferenceQueue，加入的前提是referent引用的对象不可达（强引用不可达）
+        // 开发者可以通过从ReferenceQueue中poll元素感知到对象被回收的事件。
         ReferenceQueue<? super Object> q = r.queue;
         if (q != ReferenceQueue.NULL) q.enqueue(r);
         return true;
@@ -229,6 +255,7 @@ public abstract class Reference<T> {
          */
         handler.setPriority(Thread.MAX_PRIORITY);
         handler.setDaemon(true);
+        // 类加载期间，ReferenceHandler线程就触发了
         handler.start();
 
         // provide access in SharedSecrets
