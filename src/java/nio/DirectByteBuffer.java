@@ -36,6 +36,8 @@ import sun.nio.ch.DirectBuffer;
 /**
  * 只能存储字节数据
  * IO性能更好，可以省一次cpu copy
+ *
+ * 内存映射文件的作用是使一个磁盘文件与存储空间中的一个缓冲区建立映射关系，然后当从缓冲区中取数据，就相当于读文件中的相应字节；而将数据存入缓冲区，就相当于写文件中的相应字节。这样就可以不使用read和write直接执行I/O了
  */
 class DirectByteBuffer
 
@@ -210,6 +212,7 @@ class DirectByteBuffer
     {
 
         super(mark, pos, lim, cap);
+        // 与传入的db指向同一块直接内存空间，起始地址为db原position
         address = db.address() + off;
 
         cleaner = null;
@@ -220,6 +223,10 @@ class DirectByteBuffer
 
     }
 
+    /**
+     * 新建一个buffer,其实是将起始地址移到了原position处，所以新position=0
+     * @return
+     */
     public ByteBuffer slice() {
         int pos = this.position();
         int lim = this.limit();
@@ -339,6 +346,7 @@ class DirectByteBuffer
 
             if (srem > rem)
                 throw new BufferOverflowException();
+            // copy
             unsafe.copyMemory(sb.ix(spos), ix(pos), (long)srem << 0);
             sb.position(spos + srem);
             position(pos + srem);
@@ -378,7 +386,7 @@ class DirectByteBuffer
             int rem = (pos <= lim ? lim - pos : 0);
             if (length > rem)
                 throw new BufferOverflowException();
-                Bits.copyFromArray(src, arrayBaseOffset,
+            Bits.copyFromArray(src, arrayBaseOffset,
                                    (long)offset << 0,
                                    ix(pos),
                                    (long)length << 0);

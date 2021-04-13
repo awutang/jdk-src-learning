@@ -245,6 +245,8 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
     /**
      * Creates a {@code LinkedBlockingQueue} with a capacity of
      * {@link Integer#MAX_VALUE}.
+     *
+     * LinkedBlockingQueue可以不指定大小，此时最大为Integer.MAX_VALUE，为无界队列；但ArrayBlockingQueue都得指定capacity，因此是有界的
      */
     public LinkedBlockingQueue() {
         this(Integer.MAX_VALUE);
@@ -418,6 +420,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         putLock.lock();
         try {
             if (count.get() < capacity) {
+                // 添加
                 enqueue(node);
                 c = count.getAndIncrement();
                 if (c + 1 < capacity)

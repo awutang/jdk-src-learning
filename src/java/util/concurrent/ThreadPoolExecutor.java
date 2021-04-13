@@ -394,7 +394,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     private static final int TERMINATED =  3 << COUNT_BITS; // 011000...000
 
     // Packing and unpacking ctl
+    // 得到c的高三位，表示线程池状态
     private static int runStateOf(int c)     { return c & ~CAPACITY; } // ~取反
+    // 得到c的低29位，表示线程池中的线程数目
     private static int workerCountOf(int c)  { return c & CAPACITY; }
     private static int ctlOf(int rs, int wc) { return rs | wc; }
 
@@ -901,11 +903,15 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * value to ensure reads of fresh values after checking other pool
      * state).
      * @return true if successful
+     *
+     * 可以addWorker多次，从而添加多个task,达到多线程执行的目的
      */
     private boolean addWorker(Runnable firstTask, boolean core) {
         retry:
         for (;;) {
             int c = ctl.get();
+
+            // 线程池状态
             int rs = runStateOf(c);
 
             // Check if queue empty only if necessary.
@@ -916,17 +922,25 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 return false;
 
             for (;;) {
+
+                // 线程池中的线程数目
                 int wc = workerCountOf(c);
+
                 // 如果线程数超过系统限制的，则直接返回false
                 if (wc >= CAPACITY ||
                         // 根据core判断当前创建线程是否在核心线程阶段(即corePoolSize还未满之时进入当前方法，但可能其他任务在这之间提交导致线程数超过了)，
                         // 如果是，则比较若超过corePoolSize不再创建线程；如果不是则说明是在任务队列满了之后的新增线程，所以要与maximumPoolSize比较
                     wc >= (core ? corePoolSize : maximumPoolSize))
                     return false;
+
+                // 新增线程
                 if (compareAndIncrementWorkerCount(c))
+                    // break retry 跳到retry处，且不再进入循环
                     break retry;
+
                 c = ctl.get();  // Re-read ctl
                 if (runStateOf(c) != rs)
+                    // continue retry 跳到retry处，且再次进入循环
                     continue retry;
                 // else CAS failed due to workerCount change; retry inner loop
             }
@@ -936,9 +950,13 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         boolean workerAdded = false;
         Worker w = null;
         try {
+
+            // 给任务创建新的线程
             w = new Worker(firstTask);
             final Thread t = w.thread;
             if (t != null) {
+
+                // 锁保护workers
                 final ReentrantLock mainLock = this.mainLock;
                 mainLock.lock();
                 try {
@@ -950,6 +968,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     if (rs < SHUTDOWN ||
                         (rs == SHUTDOWN && firstTask == null)) {
                         if (t.isAlive()) // precheck that t is startable
+                            // t已经start了，这是不可能的，因此有问题
                             throw new IllegalThreadStateException();
                         workers.add(w);
                         int s = workers.size();
@@ -961,6 +980,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     mainLock.unlock();
                 }
                 if (workerAdded) {
+                    // 线程添加成功则启动
                     t.start();
                     workerStarted = true;
                 }
@@ -1343,6 +1363,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
     /**
+     * ThreadPoolExecutor主要逻辑：
      * ExecutorService.submit被调用时，会执行execute
      * Executes the given task sometime in the future.  The task
      * may execute in a new thread or in an existing pooled thread.
@@ -1382,18 +1403,24 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          */
         int c = ctl.get();
         if (workerCountOf(c) < corePoolSize) {
+            // 1. corePoolSize 核心线程池中新增线程
             if (addWorker(command, true))
                 return;
             c = ctl.get();
         }
         if (isRunning(c) && workQueue.offer(command)) {
+            // 2. workQueue 将任务添加到任务队列
+
             int recheck = ctl.get();
             if (! isRunning(recheck) && remove(command))
+                // 若线程池变成>=SHUTDOWN了，则从workQueue中删除任务
                 reject(command);
             else if (workerCountOf(recheck) == 0)
+                // 否则若线程池中无线程，则新建一个
                 addWorker(null, false);
         }
         else if (!addWorker(command, false))
+            // 3. maximumPoolSize 新增非核心线程
             reject(command);
     }
 

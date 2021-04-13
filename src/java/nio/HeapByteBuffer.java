@@ -146,11 +146,13 @@ class HeapByteBuffer
     }
 
 
-
-
-
-
-
+    /**
+     * 将数据从this读出并写入dst
+     * @param dst
+     * @param offset
+     * @param length
+     * @return
+     */
     public ByteBuffer get(byte[] dst, int offset, int length) {
         checkBounds(offset, length, dst.length);
         if (length > remaining())

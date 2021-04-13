@@ -41,6 +41,9 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.*;
 
 /**
+ * 线程池的主要流程（多种情况添加任务，任务从queue中获取等）还是依托于ThreadPoolExecutor
+ *
+ *
  * A {@link ThreadPoolExecutor} that can additionally schedule
  * commands to run after a given delay, or to execute
  * periodically. This class is preferable to {@link java.util.Timer}
@@ -320,6 +323,9 @@ public class ScheduledThreadPoolExecutor
      * run-after-shutdown parameters.
      *
      * @param task the task
+     *
+     * 如何实现定时执行的？因为线程池中本来任务的触发时间就不是确定的，受任务的多少及cpu切换的影响
+     *             --这些不确定是不考虑的，只要在DelayedWorkQueue.RunnableScheduledFuture<?> take()中判断到达触发时间戳就行,所以其实无法精确延时
      */
     private void delayedExecute(RunnableScheduledFuture<?> task) {
         if (isShutdown())
@@ -833,6 +839,8 @@ public class ScheduledThreadPoolExecutor
          */
 
         private static final int INITIAL_CAPACITY = 16;
+
+        // 小顶堆 根据触发时间戳排序
         private RunnableScheduledFuture<?>[] queue =
             new RunnableScheduledFuture<?>[INITIAL_CAPACITY];
         private final ReentrantLock lock = new ReentrantLock();
@@ -878,6 +886,7 @@ public class ScheduledThreadPoolExecutor
             while (k > 0) {
                 int parent = (k - 1) >>> 1;
                 RunnableScheduledFuture<?> e = queue[parent];
+                // 小顶堆 根据触发时间戳排序
                 if (key.compareTo(e) >= 0)
                     break;
                 queue[k] = e;
@@ -1002,6 +1011,11 @@ public class ScheduledThreadPoolExecutor
             }
         }
 
+        /**
+         * 添加任务到小顶堆
+         * @param x
+         * @return
+         */
         public boolean offer(Runnable x) {
             if (x == null)
                 throw new NullPointerException();
@@ -1051,6 +1065,8 @@ public class ScheduledThreadPoolExecutor
             int s = --size;
             RunnableScheduledFuture<?> x = queue[s];
             queue[s] = null;
+
+            // 当从小顶堆获取了root节点后，将最后一个节点放入root未支出，并向下调整，直至再变成小顶堆
             if (s != 0)
                 siftDown(0, x);
             setIndex(f, -1);
@@ -1071,10 +1087,16 @@ public class ScheduledThreadPoolExecutor
             }
         }
 
+        /**
+         * 从Scheduler的队列中获取任务，从ThreadPoolExecutor中runWorker()触发过来，任务获取成功后再回到ThreadPoolExecutor中runWorker()中执行业务逻辑
+         * @return
+         * @throws InterruptedException
+         */
         public RunnableScheduledFuture<?> take() throws InterruptedException {
             final ReentrantLock lock = this.lock;
             lock.lockInterruptibly();
             try {
+                // 循环获取，直至有到达延时时间戳的任务，
                 for (;;) {
                     RunnableScheduledFuture<?> first = queue[0];
                     if (first == null)
@@ -1082,6 +1104,7 @@ public class ScheduledThreadPoolExecutor
                     else {
                         long delay = first.getDelay(NANOSECONDS);
                         if (delay <= 0)
+                            // 只有当到达触发时间才返回
                             return finishPoll(first);
                         first = null; // don't retain ref while waiting
                         if (leader != null)

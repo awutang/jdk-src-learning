@@ -648,10 +648,18 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             siftUpComparable(k, x);
     }
 
+    /**
+     * 向上调整直至符合小顶堆规则，大小的定义是根据compareTo()来的,
+     * 比如netty中存放延时任务的delayedTaskQueue就是PriorityQueue,compareTo()定义将将延时时间做比较，所以插入新任务时将延时时间更短的放小顶堆
+     * 前面，取数据的时候queue[0]就可以得到更早发生的任务。从而达成了延时时间越短，优先级越高的目标
+     * @param k
+     * @param x
+     */
     @SuppressWarnings("unchecked")
     private void siftUpComparable(int k, E x) {
         Comparable<? super E> key = (Comparable<? super E>) x;
         while (k > 0) {
+            // 得到小顶堆中父节点index
             int parent = (k - 1) >>> 1;
             Object e = queue[parent];
             if (key.compareTo((E) e) >= 0)

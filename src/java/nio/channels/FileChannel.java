@@ -615,6 +615,8 @@ public abstract class FileChannel
      *
      * @throws  IOException
      *          If some other I/O error occurs
+     *
+     *          DMA引擎直接把数据从内核缓冲区传输到协议引擎,cpu copy为0（应用与内核之间没有copy），2次上下文切换（应用直接调用了系统方法）
      */
     public abstract long transferTo(long position, long count,
                                     WritableByteChannel target)

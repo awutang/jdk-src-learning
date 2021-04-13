@@ -59,7 +59,12 @@ public abstract class AbstractSelectableChannel
     // deregistered.  Protected by keyLock.
 
     // 一个channel会在多个selector上注册吗？
-    // --应该是，一个Channel对象可以注册到多个Selector对象，一个Selector对象可以接受多个Channel对象的注册，多对多的关系
+    /**--应该是，一个Channel对象可以注册到多个Selector对象，一个Selector对象可以接受多个Channel对象的注册，多对多的关系
+     但是netty的channel是与某一selector绑定的（Channel构造方法中指定了eventLoop(eventLoop中新建了一个selector)）所以只对应一个selector,
+     如果Netty的channel构造中用了另一个channel的NioEventLoop则多个netty.channel可以对应一个selector--netty中channel与selector是多对一的
+     ,jdknio的channel是未与某一selector绑定的，对应了多个selector
+     */
+    // 当前jdk nio channel对应的所有selector
     private SelectionKey[] keys = null;
     private int keyCount = 0;
 
@@ -103,6 +108,7 @@ public abstract class AbstractSelectableChannel
                 if (keys[i] == null)
                     break;
         } else if (keys == null) {
+            // 首次走到这
             keys =  new SelectionKey[3];
         } else {
             // Grow key array
@@ -216,6 +222,7 @@ public abstract class AbstractSelectableChannel
                 throw new IllegalBlockingModeException();
 
             SelectionKey k = findKey(sel);
+            // 当前jdknio.channel已经在selector注册过了
             if (k != null) {
                 // 此处会校验k是否valid,否则抛出CancelledKeyException
                 k.interestOps(ops);

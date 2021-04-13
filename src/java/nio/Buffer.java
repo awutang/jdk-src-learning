@@ -181,8 +181,23 @@ public abstract class Buffer {
     static final int SPLITERATOR_CHARACTERISTICS =
         Spliterator.SIZED | Spliterator.SUBSIZED | Spliterator.ORDERED;
 
+    /**
+     * <p> A buffer's <i>capacity</i> is the number of elements it contains.  The
+     *  *   capacity of a buffer is never negative and never changes.  </p>
+     *  *
+     *  *   <p> A buffer's <i>limit</i> is the index of the first element that should
+     *  *   not be read or written.  A buffer's limit is never negative and is never
+     *  *   greater than its capacity.  </p>
+     *  *
+     *  *   <p> A buffer's <i>position</i> is the index of the next element to be
+     *  *   read or written.  A buffer's position is never negative and is never
+     *  *   greater than its limit.  </p>
+     */
     // Invariants: mark <= position <= limit <= capacity
     private int mark = -1;
+    // position处可以读也可以写，所以写完之后再读时需要flip
+    // 当这块内存需要写的时候，将position=0，limit=capacity 表示从0处可以写，写一个position就加1，直到capacity
+    // 当这块内存需要读的时候，flip(),将limit=position,position=0表示从0处可以读，一直可以读到limit(上一次写时的最大位置)
     private int position = 0;
     private int limit;
     private int capacity;

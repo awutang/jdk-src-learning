@@ -1700,6 +1700,11 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
             }
             return false;
         }
+
+        /**
+         * 底层实现是LockSupport.park 放弃cpu与锁无关
+         * @return
+         */
         public boolean block() {
             if (isReleasable())
                 return true;

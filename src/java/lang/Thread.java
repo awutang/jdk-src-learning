@@ -146,6 +146,8 @@ class Thread implements Runnable {
     }
 
     private volatile String name;
+
+    // 由于各个操作系统的线程调度器的实现大相径庭，因此设置线程优先级不能保证在其他操作系统上能正确执行，因此不建议设置priority
     private int            priority;
     private Thread         threadQ;
     private long           eetop;

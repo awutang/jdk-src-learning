@@ -615,11 +615,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * in bulk tasks.  Subclasses of Node with a negative hash field
      * are special, and contain null keys and values (but are never
      * exported).  Otherwise, keys and vals are never null.
+     *
+     * 数组中每个元素的数据结构
      */
     static class Node<K,V> implements Map.Entry<K,V> {
         final int hash;
         final K key;
         volatile V val;
+        // 指向链表or 树
         volatile Node<K,V> next;
 
         Node(int hash, K key, V val, Node<K,V> next) {
@@ -769,6 +772,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /**
      * The array of bins. Lazily initialized upon first insertion.
      * Size is always a power of two. Accessed directly by iterators.
+     *
+     * 底层实现：数组+链表/红黑树
      */
     transient volatile Node<K,V>[] table;
 
@@ -1009,13 +1014,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
+        // 1. 根据key计算hash值
         int hash = spread(key.hashCode());
         int binCount = 0;
+
+        // 2. 循环数组（每个桶bin对应一个数组元素）
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
+
+            // 2.1. 如果table还未初始化，则先初始化table,进入第二次循环时才真正put数据
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
+
+            // 2.2 table已经初始化，判断hash index处是否有数据
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                // i处设置new Node<K,V>(hash, key, value, null)
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
@@ -1024,6 +1037,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
+                // 此处加锁
                 synchronized (f) {
                     if (tabAt(tab, i) == f) {
                         if (fh >= 0) {
@@ -1130,6 +1144,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                         if (value != null)
                                             e.val = value;
                                         else if (pred != null)
+                                            // 删除中间的节点了
                                             pred.next = e.next;
                                         else
                                             setTabAt(tab, i, e.next);
@@ -2222,16 +2237,25 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final Node<K,V>[] initTable() {
         Node<K,V>[] tab; int sc;
+
+        // 1. 当table未被初始化时，进入循环进行初始化
         while ((tab = table) == null || tab.length == 0) {
             if ((sc = sizeCtl) < 0)
+                // 2. (sc = sizeCtl) < 0说明有其他线程正在初始化table，因此放弃cpu
                 Thread.yield(); // lost initialization race; just spin
             else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+                // 3. U.compareAndSwapInt(this, SIZECTL, sc, -1):CAS更新sizeCtl为-1.表示当前线程正在初始化table,
+                // 保证其他线程不能同时进入此处，线程安全
                 try {
                     if ((tab = table) == null || tab.length == 0) {
+                        // 获取设置的容量
                         int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
+                        // 新建数组
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
+
+                        // myConfusion:为啥将sc减半？
                         sc = n - (n >>> 2);
                     }
                 } finally {
@@ -3394,6 +3418,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         public final boolean hasNext() { return next != null; }
         public final boolean hasMoreElements() { return next != null; }
 
+        /**
+         * 非线程安全的，虽然map.replaceNode(p.key, null, null);线程安全，但是lastReturned = null;不安全
+         */
         public final void remove() {
             Node<K,V> p;
             if ((p = lastReturned) == null)
@@ -3443,6 +3470,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         public final V nextElement() { return next(); }
     }
 
+    /**
+     * 遍历map中的元素
+     * @param <K>
+     * @param <V>
+     */
     static final class EntryIterator<K,V> extends BaseIterator<K,V>
         implements Iterator<Map.Entry<K,V>> {
         EntryIterator(Node<K,V>[] tab, int index, int size, int limit,
@@ -3450,6 +3482,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             super(tab, index, size, limit, map);
         }
 
+        /**
+         * 非线程安全，这是获取iterator中当前节点，因此需要保证线程安全，不然线程T1会干扰T2的next操作（使得T2的下一次next获取到的节点并不是下一个，
+         * 可能是下下个，这不符合T2遍历的要求）
+         * @return
+         */
         public final Map.Entry<K,V> next() {
             Node<K,V> p;
             if ((p = next) == null)

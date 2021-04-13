@@ -83,8 +83,12 @@ public interface ReadableByteChannel extends Channel {
      *
      * @return  The number of bytes read, possibly zero, or <tt>-1</tt> if the
      *          channel has reached end-of-stream
+     *          根据Java NIO read() End of Stream read返回-1代表的EOF，应该是说明对方优雅关闭了连接(比如对方正常发出FIN并响应之类的)。
+     *          如果不优雅关闭（比如宕机），应该会抛出异常。
      *
      * @throws  NonReadableChannelException
+     * --这个是unchecked Exception,不是IOException子类，但是本方法只声明抛出IOException ，因此此异常不能被业务处理--不是的，
+     * 声明抛出IOException只是因为checkedException需要被强制声明而已，实际上此方法抛出了NonReadableChannelException后只要能被catch住就能执行相应操作
      *          If this channel was not opened for reading
      *
      * @throws  ClosedChannelException

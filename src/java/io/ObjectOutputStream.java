@@ -1175,6 +1175,7 @@ public class ObjectOutputStream
             } else if (obj instanceof Enum) {
                 writeEnum((Enum<?>) obj, desc, unshared);
             } else if (obj instanceof Serializable) {
+                // 一般对象的序列化
                 writeOrdinaryObject(obj, desc, unshared);
             } else {
                 if (extendedDebugInfo) {
@@ -1429,6 +1430,7 @@ public class ObjectOutputStream
             if (desc.isExternalizable() && !desc.isProxy()) {
                 writeExternalData((Externalizable) obj);
             } else {
+                //
                 writeSerialData(obj, desc);
             }
         } finally {
@@ -1506,6 +1508,7 @@ public class ObjectOutputStream
 
                 curPut = oldPut;
             } else {
+                //
                 defaultWriteFields(obj, slotDesc);
             }
         }
@@ -1531,6 +1534,7 @@ public class ObjectOutputStream
             primVals = new byte[primDataSize];
         }
         desc.getPrimFieldValues(obj, primVals);
+        // 写入
         bout.write(primVals, 0, primDataSize, false);
 
         ObjectStreamField[] fields = desc.getFields(false);
