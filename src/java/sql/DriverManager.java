@@ -98,6 +98,7 @@ public class DriverManager {
      * jdbc.properties and then use the {@code ServiceLoader} mechanism
      */
     static {
+        // 对各种driver实现类进行对象初始化
         loadInitialDrivers();
         println("JDBC DriverManager initialized");
     }

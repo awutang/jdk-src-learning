@@ -336,6 +336,10 @@ public final class ServiceLoader<S>
             this.loader = loader;
         }
 
+        /**
+         * 会被调用多次--每个配置文件调用一次
+         * @return
+         */
         private boolean hasNextService() {
             if (nextName != null) {
                 return true;
@@ -354,13 +358,17 @@ public final class ServiceLoader<S>
                     fail(service, "Error locating configuration files", x);
                 }
             }
+
+            // 如果有多个配置文件，则此处应该只读取了第一个(因为pending只要是读取到了某个文件那pending.hasNext()==true)
             while ((pending == null) || !pending.hasNext()) {
                 if (!configs.hasMoreElements()) {
                     return false;
                 }
                 // 将META-INF/services/java.sql.Driver文件中的内容解析出来
+                // myConfusion:如果一个配置文件中有多行数据，那么被使用的也只有一行
                 pending = parse(service, configs.nextElement());
             }
+            // 执行pending.next()之后pending.hasNext()==false
             nextName = pending.next();
             return true;
         }
@@ -395,6 +403,8 @@ public final class ServiceLoader<S>
             }
             try {
                 // 反射，根据Class对象得到具体实例
+                // myConfusionsv:为什么还需要利用反射生成具体对象--因为除了jdbc应用场景之外，ServiceLoader还可以运用到其他场景，
+                // 比如AsynchronousChannelProvider，此类对应的实现类Provider1(在META-INF/services/java.nio.channels.spi.AsynchronousChannelProvider文件中配置)中并没有static代码块生成对象的逻辑
                 S p = service.cast(c.newInstance());
                 // 原来providers在这里设置值的 com.mysql.jdbc.Driver:对应实例
                 providers.put(cn, p);

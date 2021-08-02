@@ -106,6 +106,7 @@ public abstract class SelectorProvider {
 
     private static boolean loadProviderAsService() {
 
+        // 利用到了spi
         ServiceLoader<SelectorProvider> sl =
             ServiceLoader.load(SelectorProvider.class,
                                ClassLoader.getSystemClassLoader());

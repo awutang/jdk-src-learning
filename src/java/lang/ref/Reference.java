@@ -138,9 +138,11 @@ public abstract class Reference<T> {
     /* High-priority thread to enqueue pending References
 
     对于DirectByteBuf中的回收cleaner:
-    首先，DirectBuffer buf 如果已经没有强引用了，那么JVM在执行gc时就会发现只有一个Cleaner还在引用着这个buf，那么就会把与此buf相关的那个cleaner放到一个名为pending的链表里。这个链表是通过Reference.discovered域连接在一起的。
+    首先，DirectBuffer buf 如果已经没有强引用了（变成垃圾对象），那么JVM在执行gc时就会发现只有一个Cleaner还在引用着这个buf，那么就会把与此buf相关的那个cleaner放到一个名为pending的链表里。这个链表是通过Reference.discovered域连接在一起的。
     接着，Reference Handler这个线程会不断地从这个pending链表上取出新的对象来。它可能是WeakReference，也可能是SoftReference，当然也可能是PhantomReference和Cleaner。
     最后，如果是Cleaner，那就直接调用Cleaner的clean方法，然后就结束了。其他的情况下，要交给这个对象所关联的queue，以便于后续的处理
+
+    所以其实这个ReferenceHandler线程执行与gc无关，但是pendingList中元素的新增依赖于gc
      */
     private static class ReferenceHandler extends Thread {
 
@@ -239,6 +241,11 @@ public abstract class Reference<T> {
 
         // 将Reference对象加入到ReferenceQueue，加入的前提是referent引用的对象不可达（强引用不可达）
         // 开发者可以通过从ReferenceQueue中poll元素感知到对象被回收的事件。
+        // myConfusionsv:此处r.referent是null吗？--通过demo可知，并不是null
+        //  可以看到，对于Soft references和Weak references clear_referent字段传入的都是true，这也符合我们的预期：对象不可达后，引用字段就会被置为null，然后对象就会被回收（对于软引用来说，如果内存足够的话，在Phase 1，相关的引用就会从refs_list中被移除，到Phase 3时refs_list为空集合）。
+        //但对于Final references和 Phantom references，clear_referent字段传入的是false，也就意味着被这两种引用类型引用的对象，如果没有其他额外处理，只要Reference对象还存活，那引用的对象是不会被回收的
+        //链接：https://juejin.cn/post/6844903704387125256
+
         ReferenceQueue<? super Object> q = r.queue;
         if (q != ReferenceQueue.NULL) q.enqueue(r);
         return true;
