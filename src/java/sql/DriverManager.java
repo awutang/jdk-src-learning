@@ -677,6 +677,7 @@ public class DriverManager {
                         return (con);
                     }
                 } catch (SQLException ex) {
+                    // connect报错，记录原因，并再次循环试下一个Driver对象
                     if (reason == null) {
                         reason = ex;
                     }
